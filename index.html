@@ -292,7 +292,11 @@
 .jx36-empty{text-align:center;padding:55px 12px;color:#8091a7}.jx36-empty i{font-size:32px;color:#5c80ae;margin-bottom:12px;display:block}
 @media(max-width:720px){.jx36-hero,.jx36-panel-head,.jx36-item{flex-direction:column;align-items:flex-start}.jx36-stats{grid-template-columns:1fr}.jx36-hero{padding:25px}.jx36-actions{width:100%}}
 </style>
-</head>
+<style id="jx37-student-status">
+.jx-today-absent,.jx-today-late{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:11px;padding:12px 15px;font-size:12px;font-weight:800;white-space:nowrap}
+.jx-today-absent{background:#feeaec;color:#b63243;border:1px solid #f9d6dc}
+.jx-today-late{background:#fff3df;color:#a65c12;border:1px solid #f8e3bc}
+</style></head>
 <body>
 
 <div class="loading-overlay" id="loading-overlay"><div class="loading-spinner-wrap"><div class="loading-spinner-ring"></div><img src="https://raw.githubusercontent.com/JasonPoen/Jadex/refs/heads/main/Jadex_Logo%20-%201.png" alt="Loading"></div><div class="loading-text" id="loading-text">Loading...</div></div>
@@ -916,22 +920,44 @@ function jadexOpenStudentDocument(kind,id){
   document.getElementById('jx-doc-modal').classList.add('open');
  }).withFailureHandler(function(e){hideLoading();alert((e&&e.message)||'Document unavailable')}).jadexStudentDocumentV12(jadexStudentSession.token,kind,id);
 }
+function jx37StudentAttendance_(data,rosterId,date){
+ var records=(data&&data.attendance)||[];
+ for(var i=records.length-1;i>=0;i--){var a=records[i];if(String(a.rosterId)===String(rosterId)&&String(a.date).slice(0,10)===String(date).slice(0,10))return a;}
+ return null;
+}
+function jx37StudentStatus_(record){
+ if(!record)return 'Pending';
+ var s=String(record.status||'').trim().toLowerCase();
+ if(s==='absent'||s==='absence')return 'Absent';
+ if(s==='late')return 'Late';
+ if(s==='present'||s==='attended'||s==='checked in'||s==='checked-in')return 'Present';
+ return 'Pending';
+}
+function jx37StudentBadge_(status){
+ if(status==='Absent')return '<span class="jx-today-absent"><i class="fas fa-user-times"></i> Absent</span>';
+ if(status==='Late')return '<span class="jx-today-late"><i class="fas fa-clock"></i> Checked In · Late</span>';
+ return '<span class="jx-today-complete"><i class="fas fa-check-circle"></i> Checked In</span>';
+}
 function jadexStudentTodayCheckInV17(d){
  var now=new Date(),today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
  var list=(d.roster||[]).filter(function(r){return String(r.date).slice(0,10)===today&&r.status!=='Cancelled'});
  var header='<div class="jx-today-header"><div class="jx-today-icon"><i class="fas fa-fingerprint"></i></div><div><span class="jx-today-kicker">YOUR DAY AT JADEX</span><h3>Today &amp; Check-In</h3><p>Check in directly from your dashboard.</p></div><span class="jx-today-date">'+now.toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})+'</span></div>';
  if(!list.length)return '<section class="jx-today">'+header+'<div class="jx-today-empty"><div class="jx-empty-orb"><i class="fas fa-calendar-check"></i></div><h4>No Class For Today</h4><p>Your schedule is clear. Enjoy your rest day and see you at your next session.</p><button class="jx-today-secondary" data-page="roster" onclick="jadexStudentNav(this.dataset.page)">View My Schedule <i class="fas fa-arrow-right"></i></button></div></section>';
  return '<section class="jx-today">'+header+'<div class="jx-today-list">'+list.map(function(r){
-  var done=(d.attendance||[]).some(function(a){return String(a.rosterId)===String(r.rosterId)&&String(a.date).slice(0,10)===today});
-  var btn=done?'<span class="jx-today-complete"><i class="fas fa-check-circle"></i> Checked In</span>':'<button class="jx-today-action" data-roster="'+jadexEscape(r.rosterId)+'" onclick="jadexStudentCheckInV12(this.dataset.roster)"><i class="fas fa-fingerprint"></i> Check In Now <i class="fas fa-arrow-right"></i></button>';
+  var state=jx37StudentStatus_(jx37StudentAttendance_(d,r.rosterId,today));
+  var btn=state!=='Pending'?jx37StudentBadge_(state):'<button class="jx-today-action" data-roster="'+jadexEscape(r.rosterId)+'" onclick="jadexStudentCheckInV12(this.dataset.roster)"><i class="fas fa-fingerprint"></i> Check In Now <i class="fas fa-arrow-right"></i></button>';
   return '<div class="jx-today-class"><div class="jx-today-time"><small>CLASS SESSION</small><strong>'+jadexEscape(r.start)+' – '+jadexEscape(r.end)+'</strong></div><div class="jx-today-info"><span><i class="fas fa-map-marker-alt"></i> '+jadexEscape(r.location||'—')+'</span><span><i class="fas fa-user-tie"></i> '+jadexEscape(r.coach||'—')+'</span></div>'+btn+'</div>';
  }).join('')+'</div><div class="jx-today-foot"><i class="fas fa-shield-alt"></i> Secure check-in opens 30 minutes before class and closes at class end.</div></section>';
 }
 function jadexCheckInCardsV12(d){
  var now=new Date(),today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
- var list=d.roster.filter(function(r){return r.date===today&&r.status!=='Cancelled';});
+ var list=(d.roster||[]).filter(function(r){return String(r.date).slice(0,10)===today&&r.status!=='Cancelled';});
  if(!list.length)return '<div class="jx-today-empty"><div class="jx-empty-orb"><i class="fas fa-calendar-check"></i></div><h4>No Class For Today</h4><p>There are no classes scheduled for you today.</p></div>';
- return list.map(function(r){var done=d.attendance.some(function(a){return a.rosterId===r.rosterId&&a.date===today;});return '<div class="jx-check"><div><strong>'+jadexEscape(r.start)+' – '+jadexEscape(r.end)+'</strong><div class="sp-muted">'+jadexEscape(r.location)+' · '+jadexEscape(r.coach)+'</div></div><button class="jx-btn" '+(done?'disabled':'onclick="jadexStudentCheckInV12(\''+jadexEscape(r.rosterId)+'\')"')+'>'+(done?'Checked In':'Check In')+'</button></div>';}).join('')+'<p class="sp-muted">Available from 30 minutes before class until class end. One check-in per class.</p>';
+ return list.map(function(r){
+  var state=jx37StudentStatus_(jx37StudentAttendance_(d,r.rosterId,today));
+  var action=state!=='Pending'?jx37StudentBadge_(state):'<button class="jx-btn" data-roster="'+jadexEscape(r.rosterId)+'" onclick="jadexStudentCheckInV12(this.dataset.roster)">Check In</button>';
+  return '<div class="jx-check"><div><strong>'+jadexEscape(r.start)+' – '+jadexEscape(r.end)+'</strong><div class="sp-muted">'+jadexEscape(r.location)+' · '+jadexEscape(r.coach)+'</div></div>'+action+'</div>';
+ }).join('')+'<p class="sp-muted">Available from 30 minutes before class until class end. One check-in per class.</p>';
 }
 function jadexStudentCheckInV12(rosterId){
  if(!jadexStudentSession)return;
