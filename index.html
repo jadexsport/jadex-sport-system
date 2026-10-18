@@ -991,11 +991,8 @@ function jx40RenderUsers(){jx52UpdateRoleOptions();
  var id=jx40Escape(x.no),name=jx40Escape(x.name),login=jx40Escape(x.loginId),email=jx40Escape(x.email||'Not set'),role=jx40Escape(x.accessType),frozen=x.accountStatus==='Frozen',canManage=jx52CanManage(x);
  return '<tr><td><div class="jx40-member"><span class="jx40-avatar">'+jx40Escape((x.name||'?').charAt(0).toUpperCase())+'</span><div><strong>'+name+'</strong><small>Account #'+id+'</small></div></div></td><td><code>'+login+'</code></td><td><span class="jx40-role '+(role==='Admin'?'admin':'')+'">'+role+'</span></td><td>'+email+'</td><td><span class="jx42-status '+(frozen?'frozen':'active')+'"><i class="fas fa-circle"></i> '+(frozen?'Frozen':'Active')+'</span></td><td><div class="jx40-actions">'+(canManage?'<button data-jx40-edit="'+id+'"><i class="fas fa-user-edit"></i> Edit</button><button data-jx40-reset="'+id+'"><i class="fas fa-key"></i> Reset Password</button><button class="jx42-action '+(frozen?'unfreeze':'freeze')+'" data-jx42-id="'+id+'" data-jx42-status="'+(frozen?'Active':'Frozen')+'"><i class="fas '+(frozen?'fa-unlock':'fa-snowflake')+'"></i> '+(frozen?'Reactivate':'Freeze')+'</button>': '<span style="color:#94a3b8">Restricted</span>')+(jx52Role()==='Super Admin'&&x.accessType!=='Super Admin'?'<button class="jx53-permissions" data-jx53-permissions="'+id+'"><i class="fas fa-sliders-h"></i> Permissions</button>':'')+(jx52Role()==='Super Admin'&&x.accessType!=='Super Admin'&&x.loginId!==user.loginId?'<button class="jx52-delete" data-jx52-delete="'+id+'"><i class="fas fa-trash-alt"></i> Delete</button>':'')+'</div></td></tr>';
  }).join(''):'<tr><td colspan="6" class="jx40-empty">No matching team members.</td></tr>';
- document.querySelectorAll('[data-jx53-permissions]').forEach(function(b){b.addEventListener('click',function(){jx53Open(b.dataset.jx53Permissions)})});
- document.querySelectorAll('[data-jx52-delete]').forEach(function(b){b.addEventListener('click',function(){jx52DeleteConfirm(b.dataset.jx52Delete)})});
- document.querySelectorAll('[data-jx40-edit]').forEach(function(b){b.addEventListener('click',function(){editUser(b.dataset.jx40Edit)})});
- document.querySelectorAll('[data-jx40-reset]').forEach(function(b){b.addEventListener('click',function(){resetPw(b.dataset.jx40Reset)})});
- document.querySelectorAll('[data-jx42-id]').forEach(function(b){b.addEventListener('click',function(){jx42OpenStatus(b.dataset.jx42Id,b.dataset.jx42Status)})});
+ // Delegated Access Control click handler registered once.
+
 }
 
 function editUser(no){jx52UpdateRoleOptions();var x=jx40Users.find(function(y){return String(y.no)===String(no)});if(!x)return;document.getElementById('eu-no').value=x.no;document.getElementById('eu-name').value=x.name;document.getElementById('eu-loginId').value=x.loginId;document.getElementById('eu-email').value=x.email||'';document.getElementById('eu-accessType').value=x.accessType||'Coach';document.getElementById('edit-user-modal').classList.add('show')}
@@ -1561,18 +1558,17 @@ jx52ApplyNav=function(){jx53OldNav();if(!user||!user.adminToken)return;google.sc
 // Repair stuck modal state after closing any Access Control dialog.
 (function(){var previous=window.closeModal;window.closeModal=function(id){if(typeof previous==='function')previous(id);var el=document.getElementById(id);if(el)el.classList.remove('show');document.querySelectorAll('#'+id+' button:disabled').forEach(function(b){b.disabled=false})};})();
 </script>
-<script id="jx55-access-recovery">
-(function(){
-  'use strict';
-  // Only clear transient state for the individual-permissions editor.
-  function recover(){
-    var modal=document.getElementById('jx53-overlay');
-    var save=document.getElementById('jx53-save');
-    if(modal && !modal.classList.contains('show') && save)save.disabled=false;
-  }
-  document.addEventListener('click',function(event){
-    if(event.target.closest('[data-jx53-permissions], [data-jx40-edit], [data-jx40-reset], [data-jx42-id], [data-jx52-delete]')) recover();
-  },false);
+<script id="jx56-access-fix">
+(function(){'use strict';
+var tbody=document.getElementById('ac-tbody');if(!tbody)return;
+var actions=[['data-jx53-permissions',function(id){jx53Open(id)}],['data-jx52-delete',function(id){jx52DeleteConfirm(id)}],['data-jx40-edit',function(id){editUser(id)}],['data-jx40-reset',function(id){resetPw(id)}],['data-jx42-id',function(id,el){jx42OpenStatus(id,el.getAttribute('data-jx42-status'))}]];
+tbody.addEventListener('click',function(ev){var btn=ev.target.closest('button');if(!btn||!tbody.contains(btn))return;for(var i=0;i<actions.length;i++){var a=actions[i];if(btn.hasAttribute(a[0])){ev.preventDefault();try{a[1](btn.getAttribute(a[0]),btn)}catch(err){console.error('Access Control error',err);toast(err.message||'Unable to open action.','err')}return}}});
+var oldRender=window.jx40RenderUsers;window.jx40RenderUsers=function(){try{return oldRender.apply(this,arguments)}finally{var l=document.getElementById('loading-overlay');if(l)l.classList.remove('show')}};
+function afterClose(){var l=document.getElementById('loading-overlay');if(l)l.classList.remove('show')}
+var oldClose=window.closeModal;window.closeModal=function(id){var result=oldClose.apply(this,arguments);if(['edit-user-modal','jx40-create-modal','confirm-modal'].indexOf(id)>=0)afterClose();return result};
+var oldPermClose=window.jx53Close;window.jx53Close=function(){var r=oldPermClose.apply(this,arguments);afterClose();return r};
+var oldReviewClose=window.jx42CloseReview;window.jx42CloseReview=function(){var r=oldReviewClose.apply(this,arguments);afterClose();return r};
+window.jx56AccessDebug=function(){return ['loading-overlay','jx53-overlay','jx42-review','jx41-shade','confirm-modal','edit-user-modal','jx40-create-modal'].map(function(id){var e=document.getElementById(id);return {id:id,visible:!!(e&&getComputedStyle(e).display!=='none'),className:e&&e.className}})};
 })();
 </script>
 </body>
