@@ -991,11 +991,7 @@ function jx40RenderUsers(){jx52UpdateRoleOptions();
  var id=jx40Escape(x.no),name=jx40Escape(x.name),login=jx40Escape(x.loginId),email=jx40Escape(x.email||'Not set'),role=jx40Escape(x.accessType),frozen=x.accountStatus==='Frozen',canManage=jx52CanManage(x);
  return '<tr><td><div class="jx40-member"><span class="jx40-avatar">'+jx40Escape((x.name||'?').charAt(0).toUpperCase())+'</span><div><strong>'+name+'</strong><small>Account #'+id+'</small></div></div></td><td><code>'+login+'</code></td><td><span class="jx40-role '+(role==='Admin'?'admin':'')+'">'+role+'</span></td><td>'+email+'</td><td><span class="jx42-status '+(frozen?'frozen':'active')+'"><i class="fas fa-circle"></i> '+(frozen?'Frozen':'Active')+'</span></td><td><div class="jx40-actions">'+(canManage?'<button data-jx40-edit="'+id+'"><i class="fas fa-user-edit"></i> Edit</button><button data-jx40-reset="'+id+'"><i class="fas fa-key"></i> Reset Password</button><button class="jx42-action '+(frozen?'unfreeze':'freeze')+'" data-jx42-id="'+id+'" data-jx42-status="'+(frozen?'Active':'Frozen')+'"><i class="fas '+(frozen?'fa-unlock':'fa-snowflake')+'"></i> '+(frozen?'Reactivate':'Freeze')+'</button>': '<span style="color:#94a3b8">Restricted</span>')+(jx52Role()==='Super Admin'&&x.accessType!=='Super Admin'?'<button class="jx53-permissions" data-jx53-permissions="'+id+'"><i class="fas fa-sliders-h"></i> Permissions</button>':'')+(jx52Role()==='Super Admin'&&x.accessType!=='Super Admin'&&x.loginId!==user.loginId?'<button class="jx52-delete" data-jx52-delete="'+id+'"><i class="fas fa-trash-alt"></i> Delete</button>':'')+'</div></td></tr>';
  }).join(''):'<tr><td colspan="6" class="jx40-empty">No matching team members.</td></tr>';
- document.querySelectorAll('[data-jx53-permissions]').forEach(function(b){b.addEventListener('click',function(){jx53Open(b.dataset.jx53Permissions)})});
- document.querySelectorAll('[data-jx52-delete]').forEach(function(b){b.addEventListener('click',function(){jx52DeleteConfirm(b.dataset.jx52Delete)})});
- document.querySelectorAll('[data-jx40-edit]').forEach(function(b){b.addEventListener('click',function(){editUser(b.dataset.jx40Edit)})});
- document.querySelectorAll('[data-jx40-reset]').forEach(function(b){b.addEventListener('click',function(){resetPw(b.dataset.jx40Reset)})});
- document.querySelectorAll('[data-jx42-id]').forEach(function(b){b.addEventListener('click',function(){jx42OpenStatus(b.dataset.jx42Id,b.dataset.jx42Status)})});
+ // V54: action events are delegated once to #ac-tbody; no stale bindings after rerender.
 }
 
 function editUser(no){jx52UpdateRoleOptions();var x=jx40Users.find(function(y){return String(y.no)===String(no)});if(!x)return;document.getElementById('eu-no').value=x.no;document.getElementById('eu-name').value=x.name;document.getElementById('eu-loginId').value=x.loginId;document.getElementById('eu-email').value=x.email||'';document.getElementById('eu-accessType').value=x.accessType||'Coach';document.getElementById('edit-user-modal').classList.add('show')}
@@ -1039,7 +1035,80 @@ function jadexPayInvoice(invoiceId){
  // Open the tab synchronously to avoid popup blockers after async google.script.run.
  var paymentWindow=window.open('about:blank','_blank');
  if(!paymentWindow){jx41Alert('Please allow pop-ups for JADEX to open Fiuu checkout.');return;}
- try{paymentWindow.document.open();paymentWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>JADEX Secure Checkout</title></head><body style="font:16px Arial;background:#10192c;color:white;padding:40px;text-align:center"><h2>Preparing secure payment...</h2><p>Please keep this tab open.</p></body></html>');paymentWindow.document.close();}catch(_e){}
+ try{paymentWindow.document.open();paymentWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>JADEX Secure Checkout</title></head><body style="font:16px Arial;background:#10192c;color:white;padding:40px;text-align:center"><h2>Preparing secure payment...</h2><p>Please keep this tab open.</p><style id="jx54-css">
+/* Layer order: loading always above the active dialog; inactive overlays never capture clicks. */
+#loading-overlay.show{z-index:220000!important;pointer-events:auto!important}
+#loading-overlay:not(.show),#jx53-overlay:not(.show),#jx42-review:not(.show),#jx41-shade:not(.on){pointer-events:none!important}
+#jx53-overlay.show{z-index:110000!important}
+#jx53-save:disabled{opacity:.55;cursor:wait}
+#ac-tbody button{touch-action:manipulation}
+</style>
+<script id="jx54-js">
+(function(){
+ 'use strict';
+ var tbody=document.getElementById('ac-tbody');
+ if(tbody&&!tbody.dataset.jx54Delegated){
+   tbody.dataset.jx54Delegated='1';
+   tbody.addEventListener('click',function(ev){
+     var b=ev.target.closest('button');
+     if(!b||!tbody.contains(b)||b.disabled)return;
+     var keys=[['jx53Permissions','jx53Open'],['jx52Delete','jx52DeleteConfirm'],['jx40Edit','editUser'],['jx40Reset','resetPw'],['jx42Id','jx42OpenStatus']];
+     for(var i=0;i<keys.length;i++){
+       var key=keys[i][0],method=keys[i][1];
+       if(b.dataset[key]!==undefined){
+         ev.preventDefault();
+         try{
+           if(method==='jx42OpenStatus')window[method](b.dataset[key],b.dataset.jx42Status);
+           else window[method](b.dataset[key]);
+         }catch(e){console.error('Access Control action failed',e);toast(e.message||'Unable to open this action.','err')}
+         return;
+       }
+     }
+   });
+ }
+ function reset(){
+   var ids=['jx53-overlay','jx42-review','jx40-create-modal','edit-user-modal','confirm-modal'];
+   ids.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('show')});
+   var shade=document.getElementById('jx41-shade');
+   // Do not force-close active confirmations; only clear if already inactive.
+   if(shade&&!shade.classList.contains('on'))shade.style.pointerEvents='none';
+   var save=document.getElementById('jx53-save');if(save)save.disabled=false;
+   var freeze=document.getElementById('jx42-confirm');if(freeze)freeze.disabled=false;
+   var invite=document.getElementById('jx40-invite-btn');if(invite)invite.disabled=false;
+   jx53State=null;
+   if(typeof jx42Pending!=='undefined')jx42Pending=null;
+   hideLoading();
+ }
+ window.jx54ResetAccess=reset;
+ // Close permission editor on Save only after backend confirms success.
+ var priorSave=window.jx53Save;
+ window.jx53Save=function(){
+   if(!jx53State)return;
+   var no=jx53State.no;
+   var allowed=Array.from(document.querySelectorAll('#jx53-groups [data-jx53-key]:checked')).map(function(x){return x.dataset.jx53Key});
+   var btn=document.getElementById('jx53-save');if(btn.disabled)return;
+   btn.disabled=true;
+   showLoading('Saving individual permissions...');
+   google.script.run.withSuccessHandler(function(r){
+     if(r&&r.success){
+       reset();
+       toast(r.message||'Permissions saved successfully.','ok');
+       loadUsers();
+     }else{
+       hideLoading();btn.disabled=false;
+       toast((r&&r.message)||'Unable to save permissions.','err');
+     }
+   }).withFailureHandler(function(e){
+     hideLoading();btn.disabled=false;
+     toast((e&&e.message)||'Unable to save permissions.','err');
+   }).jx53SavePermissions(jx29Token(),no,allowed);
+ };
+ // The original v53 close did not release disabled state on a cancelled editor.
+ window.jx53Close=function(){var overlay=document.getElementById('jx53-overlay');if(overlay)overlay.classList.remove('show');jx53State=null;var b=document.getElementById('jx53-save');if(b)b.disabled=false;};
+ // Every successful account list refresh uses one delegated click listener.
+ // No document-wide click blockers or event capture are installed.
+})();
+</script></body></html>');paymentWindow.document.close();}catch(_e){}
  showLoading('Preparing secure checkout...');
  google.script.run.withSuccessHandler(function(r){
   hideLoading();
@@ -1049,7 +1118,80 @@ function jadexPayInvoice(invoiceId){
   if(!/^https:\/\/(pay|sandbox-payment)\.fiuu\.com\/RMS\/pay\/[A-Za-z0-9_-]+\/$/.test(r.checkoutEndpoint)){paymentWindow.close();jx41Alert('Invalid Fiuu payment destination');return;}
   try{
    var doc=paymentWindow.document;
-   doc.open();doc.write('<!doctype html><html><head><meta charset="utf-8"><title>JADEX | Fiuu Checkout</title></head><body style="font:16px Arial;background:#10192c;color:white;text-align:center;padding:36px"><h2>Connecting to Fiuu...</h2><p>If the payment page does not open, click Continue.</p><div id="checkout"></div></body></html>');doc.close();
+   doc.open();doc.write('<!doctype html><html><head><meta charset="utf-8"><title>JADEX | Fiuu Checkout</title></head><body style="font:16px Arial;background:#10192c;color:white;text-align:center;padding:36px"><h2>Connecting to Fiuu...</h2><p>If the payment page does not open, click Continue.</p><div id="checkout"></div><style id="jx54-css">
+/* Layer order: loading always above the active dialog; inactive overlays never capture clicks. */
+#loading-overlay.show{z-index:220000!important;pointer-events:auto!important}
+#loading-overlay:not(.show),#jx53-overlay:not(.show),#jx42-review:not(.show),#jx41-shade:not(.on){pointer-events:none!important}
+#jx53-overlay.show{z-index:110000!important}
+#jx53-save:disabled{opacity:.55;cursor:wait}
+#ac-tbody button{touch-action:manipulation}
+</style>
+<script id="jx54-js">
+(function(){
+ 'use strict';
+ var tbody=document.getElementById('ac-tbody');
+ if(tbody&&!tbody.dataset.jx54Delegated){
+   tbody.dataset.jx54Delegated='1';
+   tbody.addEventListener('click',function(ev){
+     var b=ev.target.closest('button');
+     if(!b||!tbody.contains(b)||b.disabled)return;
+     var keys=[['jx53Permissions','jx53Open'],['jx52Delete','jx52DeleteConfirm'],['jx40Edit','editUser'],['jx40Reset','resetPw'],['jx42Id','jx42OpenStatus']];
+     for(var i=0;i<keys.length;i++){
+       var key=keys[i][0],method=keys[i][1];
+       if(b.dataset[key]!==undefined){
+         ev.preventDefault();
+         try{
+           if(method==='jx42OpenStatus')window[method](b.dataset[key],b.dataset.jx42Status);
+           else window[method](b.dataset[key]);
+         }catch(e){console.error('Access Control action failed',e);toast(e.message||'Unable to open this action.','err')}
+         return;
+       }
+     }
+   });
+ }
+ function reset(){
+   var ids=['jx53-overlay','jx42-review','jx40-create-modal','edit-user-modal','confirm-modal'];
+   ids.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('show')});
+   var shade=document.getElementById('jx41-shade');
+   // Do not force-close active confirmations; only clear if already inactive.
+   if(shade&&!shade.classList.contains('on'))shade.style.pointerEvents='none';
+   var save=document.getElementById('jx53-save');if(save)save.disabled=false;
+   var freeze=document.getElementById('jx42-confirm');if(freeze)freeze.disabled=false;
+   var invite=document.getElementById('jx40-invite-btn');if(invite)invite.disabled=false;
+   jx53State=null;
+   if(typeof jx42Pending!=='undefined')jx42Pending=null;
+   hideLoading();
+ }
+ window.jx54ResetAccess=reset;
+ // Close permission editor on Save only after backend confirms success.
+ var priorSave=window.jx53Save;
+ window.jx53Save=function(){
+   if(!jx53State)return;
+   var no=jx53State.no;
+   var allowed=Array.from(document.querySelectorAll('#jx53-groups [data-jx53-key]:checked')).map(function(x){return x.dataset.jx53Key});
+   var btn=document.getElementById('jx53-save');if(btn.disabled)return;
+   btn.disabled=true;
+   showLoading('Saving individual permissions...');
+   google.script.run.withSuccessHandler(function(r){
+     if(r&&r.success){
+       reset();
+       toast(r.message||'Permissions saved successfully.','ok');
+       loadUsers();
+     }else{
+       hideLoading();btn.disabled=false;
+       toast((r&&r.message)||'Unable to save permissions.','err');
+     }
+   }).withFailureHandler(function(e){
+     hideLoading();btn.disabled=false;
+     toast((e&&e.message)||'Unable to save permissions.','err');
+   }).jx53SavePermissions(jx29Token(),no,allowed);
+ };
+ // The original v53 close did not release disabled state on a cancelled editor.
+ window.jx53Close=function(){var overlay=document.getElementById('jx53-overlay');if(overlay)overlay.classList.remove('show');jx53State=null;var b=document.getElementById('jx53-save');if(b)b.disabled=false;};
+ // Every successful account list refresh uses one delegated click listener.
+ // No document-wide click blockers or event capture are installed.
+})();
+</script></body></html>');doc.close();
    var form=doc.createElement('form');form.method='POST';form.action=r.checkoutEndpoint;form.acceptCharset='UTF-8';
    var fields=r.checkoutFields;
    Object.keys(fields).forEach(function(k){if(!Object.prototype.hasOwnProperty.call(fields,k))return;var field=doc.createElement('input');field.type='hidden';field.name=k;field.value=String(fields[k]==null?'':fields[k]);form.appendChild(field);});
@@ -1558,7 +1700,79 @@ var jx53OldAllowed=jx52AllowedPage;
 jx52AllowedPage=function(p){if(!jx53MyAccess)return jx53OldAllowed(p);var key=jx53PageKeys[p];return !key||jx53MyAccess.indexOf(key)>=0};
 var jx53OldNav=jx52ApplyNav;
 jx52ApplyNav=function(){jx53OldNav();if(!user||!user.adminToken)return;google.script.run.withSuccessHandler(function(r){jx53MyAccess=r.allowed||[];document.querySelectorAll('[data-page]').forEach(function(el){el.style.display=jx52AllowedPage(el.getAttribute('data-page'))?'':'none'});var active=document.querySelector('.page.active');if(active&&!jx52AllowedPage(active.id.replace('page-',''))){var first=Object.keys(jx53PageKeys).find(function(k){return jx52AllowedPage(k)});if(first)nav(first)}}).withFailureHandler(function(e){console.warn('Permission menu refresh failed:',e.message)}).jx53MyPermissions(jx29Token())};
-// Repair stuck modal state after closing any Access Control dialog.
-(function(){var previous=window.closeModal;window.closeModal=function(id){if(typeof previous==='function')previous(id);var el=document.getElementById(id);if(el)el.classList.remove('show');document.querySelectorAll('#'+id+' button:disabled').forEach(function(b){b.disabled=false})};})();
+// V54 modal cleanup is scoped to Access Control only; see jx54-js.
+</script><style id="jx54-css">
+/* Layer order: loading always above the active dialog; inactive overlays never capture clicks. */
+#loading-overlay.show{z-index:220000!important;pointer-events:auto!important}
+#loading-overlay:not(.show),#jx53-overlay:not(.show),#jx42-review:not(.show),#jx41-shade:not(.on){pointer-events:none!important}
+#jx53-overlay.show{z-index:110000!important}
+#jx53-save:disabled{opacity:.55;cursor:wait}
+#ac-tbody button{touch-action:manipulation}
+</style>
+<script id="jx54-js">
+(function(){
+ 'use strict';
+ var tbody=document.getElementById('ac-tbody');
+ if(tbody&&!tbody.dataset.jx54Delegated){
+   tbody.dataset.jx54Delegated='1';
+   tbody.addEventListener('click',function(ev){
+     var b=ev.target.closest('button');
+     if(!b||!tbody.contains(b)||b.disabled)return;
+     var keys=[['jx53Permissions','jx53Open'],['jx52Delete','jx52DeleteConfirm'],['jx40Edit','editUser'],['jx40Reset','resetPw'],['jx42Id','jx42OpenStatus']];
+     for(var i=0;i<keys.length;i++){
+       var key=keys[i][0],method=keys[i][1];
+       if(b.dataset[key]!==undefined){
+         ev.preventDefault();
+         try{
+           if(method==='jx42OpenStatus')window[method](b.dataset[key],b.dataset.jx42Status);
+           else window[method](b.dataset[key]);
+         }catch(e){console.error('Access Control action failed',e);toast(e.message||'Unable to open this action.','err')}
+         return;
+       }
+     }
+   });
+ }
+ function reset(){
+   var ids=['jx53-overlay','jx42-review','jx40-create-modal','edit-user-modal','confirm-modal'];
+   ids.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('show')});
+   var shade=document.getElementById('jx41-shade');
+   // Do not force-close active confirmations; only clear if already inactive.
+   if(shade&&!shade.classList.contains('on'))shade.style.pointerEvents='none';
+   var save=document.getElementById('jx53-save');if(save)save.disabled=false;
+   var freeze=document.getElementById('jx42-confirm');if(freeze)freeze.disabled=false;
+   var invite=document.getElementById('jx40-invite-btn');if(invite)invite.disabled=false;
+   jx53State=null;
+   if(typeof jx42Pending!=='undefined')jx42Pending=null;
+   hideLoading();
+ }
+ window.jx54ResetAccess=reset;
+ // Close permission editor on Save only after backend confirms success.
+ var priorSave=window.jx53Save;
+ window.jx53Save=function(){
+   if(!jx53State)return;
+   var no=jx53State.no;
+   var allowed=Array.from(document.querySelectorAll('#jx53-groups [data-jx53-key]:checked')).map(function(x){return x.dataset.jx53Key});
+   var btn=document.getElementById('jx53-save');if(btn.disabled)return;
+   btn.disabled=true;
+   showLoading('Saving individual permissions...');
+   google.script.run.withSuccessHandler(function(r){
+     if(r&&r.success){
+       reset();
+       toast(r.message||'Permissions saved successfully.','ok');
+       loadUsers();
+     }else{
+       hideLoading();btn.disabled=false;
+       toast((r&&r.message)||'Unable to save permissions.','err');
+     }
+   }).withFailureHandler(function(e){
+     hideLoading();btn.disabled=false;
+     toast((e&&e.message)||'Unable to save permissions.','err');
+   }).jx53SavePermissions(jx29Token(),no,allowed);
+ };
+ // The original v53 close did not release disabled state on a cancelled editor.
+ window.jx53Close=function(){var overlay=document.getElementById('jx53-overlay');if(overlay)overlay.classList.remove('show');jx53State=null;var b=document.getElementById('jx53-save');if(b)b.disabled=false;};
+ // Every successful account list refresh uses one delegated click listener.
+ // No document-wide click blockers or event capture are installed.
+})();
 </script></body>
 </html>
